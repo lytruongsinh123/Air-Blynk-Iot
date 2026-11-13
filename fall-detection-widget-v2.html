@@ -1,0 +1,393 @@
+<!--
+  Blynk HTML Widget – Fall Detection (v2)
+  Bind datastreams in the widget settings IN THIS ORDER:
+    0 = Giatoc     (V0, Double, 0–8)
+    1 = Trangthai  (V1, String)
+    2 = Nga        (V2, Integer 0/1)
+    3 = Reset      (V3, Integer 0/1)
+-->
+<style>
+  :root{
+    --bg:#0E141B; --card:#16212C; --line:#22303D; --muted:#8FA3B5; --text:#E8EEF4;
+    --ok:#34D399; --okBg:#10291F; --okLine:#1E4A37; --warn:#F97316; --warnSoft:#FB923C;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{min-height:100%;padding:14px;display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px}
+  .label{font-size:12px;font-weight:600;color:var(--muted)}
+  .status{display:flex;align-items:center;gap:14px;background:var(--okBg);border-color:var(--okLine)}
+  .status .ico{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:#14402E;flex-shrink:0}
+  .status .cap{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#86C7A8}
+  .status .val{font-size:26px;font-weight:800;line-height:1.15}
+  .status .sub{font-size:12px;color:#A7C9B8}
+  .status.alert{background:var(--warn);border-color:var(--warn);color:#1C0A02}
+  .status.alert .ico{background:#FFF7ED}
+  .status.alert .cap,.status.alert .sub{color:#431407}
+  .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .gauge svg{width:100%;display:block}
+  .scale{display:flex;justify-content:space-between;font-size:11px;color:#6F8496;padding:0 6px}
+  .led{display:flex;flex-direction:column;gap:8px}
+  .led .body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:90px}
+  .led .ring{width:58px;height:58px;border-radius:50%;background:#1C2935;border:2px solid #2C3C4B;display:flex;align-items:center;justify-content:center;transition:.2s}
+  .led .dot{width:24px;height:24px;border-radius:50%;background:#34465A;transition:.2s}
+  .led.on .ring{background:#3A2210;border-color:#9A3412}
+  .led.on .dot{background:var(--warnSoft);box-shadow:0 0 18px var(--warnSoft)}
+  .led .txt{font-size:13px;font-weight:600;color:#C5D2DE}
+  .led.on .txt{color:#FDBA74}
+  .chart svg{width:100%;height:110px;display:block}
+  .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .head b{font-size:14px}
+  button.reset{height:52px;border-radius:16px;border:1px solid #2A3846;background:var(--card);color:#C5D2DE;
+    font:inherit;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;width:100%}
+  button.reset.hot{background:#F2F6FA;color:#0E141B;border-color:#F2F6FA}
+  button.reset:active{transform:scale(.98)}
+  details.debug{font-size:11px;color:var(--muted)}
+  details.debug summary{cursor:pointer}
+  details.debug pre{white-space:pre-wrap;word-break:break-all;background:#0A0F14;border:1px solid var(--line);border-radius:10px;padding:8px;max-height:220px;overflow:auto;color:#C5D2DE}
+</style>
+
+<div class="wrap">
+  <div class="card status" id="status">
+    <div class="ico" id="statusIco"></div>
+    <div>
+      <div class="cap">Status</div>
+      <div class="val" id="statusVal">Waiting…</div>
+      <div class="sub" id="statusSub">Waiting for data from device</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card gauge">
+      <div class="label">Acceleration</div>
+      <svg viewBox="0 0 200 116" role="img" aria-label="Acceleration">
+        <path d="M24 104 A76 76 0 0 1 176 104" fill="none" stroke="#24323F" stroke-width="16" stroke-linecap="round"/>
+        <path id="arc" d="M24 104 A76 76 0 0 1 176 104" fill="none" stroke="#34D399" stroke-width="16" stroke-linecap="round" stroke-dasharray="0 239"/>
+        <text id="accTxt" x="100" y="88" text-anchor="middle" font-size="36" font-weight="800" fill="#F2F6FA">—</text>
+        <text x="100" y="108" text-anchor="middle" font-size="13" fill="#8FA3B5">g</text>
+      </svg>
+      <div class="scale"><span>0</span><span>8</span></div>
+    </div>
+
+    <div class="card led" id="led">
+      <div class="label">Fall sensor</div>
+      <div class="body">
+        <div class="ring"><div class="dot"></div></div>
+        <div class="txt" id="ledTxt">None</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card chart">
+    <div class="head"><b>Acceleration (live)</b><span class="label" id="peak">Peak: —</span></div>
+    <svg viewBox="0 0 300 110" preserveAspectRatio="none" aria-hidden="true">
+      <defs><linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#34D399" stop-opacity=".28"/><stop offset="1" stop-color="#34D399" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path id="area" fill="url(#fill)" d=""/>
+      <path id="line" fill="none" stroke="#34D399" stroke-width="2" stroke-linejoin="round" d=""/>
+    </svg>
+  </div>
+
+  <button class="reset" id="reset" type="button">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+    Reset alert
+  </button>
+
+  <details class="debug" id="debugBox">
+    <summary>Debug</summary>
+    <pre id="debug">(no data yet)</pre>
+  </details>
+</div>
+
+<script>
+(function () {
+  var IDX = { ACC: 0, STATUS: 1, FALL: 2, RESET: 3 };
+  var NAMES = { giatoc: 0, trangthai: 1, nga: 2, reset: 3 }; // datastream names -> index
+  var MAX_G = 8, ARC_LEN = 239, MAX_POINTS = 60;
+  var state = [null, null, null, null];
+  var points = [];
+  var bridge = null;
+  var logLines = [];
+  var gotData = false;
+
+  var ICON_OK = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>';
+  var ICON_ALERT = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#C2410C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+  document.getElementById('statusIco').innerHTML = ICON_OK;
+
+  // ---------- debug ----------
+  function log(label, data) {
+    var txt;
+    try { txt = typeof data === 'string' ? data : JSON.stringify(data); } catch (e) { txt = String(data); }
+    if (txt && txt.length > 600) txt = txt.slice(0, 600) + '…';
+    logLines.unshift(new Date().toLocaleTimeString() + ' ' + label + ': ' + txt);
+    if (logLines.length > 15) logLines.pop();
+    document.getElementById('debug').textContent = logLines.join('\n');
+  }
+
+  // ---------- data parsing (accepts many shapes) ----------
+  function pick(x) {
+    if (x == null) return null;
+    if (typeof x === 'object' && !Array.isArray(x)) {
+      var keys = ['value', 'v', 'val', 'currentValue', 'data'];
+      for (var i = 0; i < keys.length; i++) if (keys[i] in x) return pick(x[keys[i]]);
+      return null;
+    }
+    if (Array.isArray(x)) return x.length ? pick(x[x.length - 1]) : null;
+    return x;
+  }
+
+  function indexOfKey(k) {
+    if (k == null) return -1;
+    var s = String(k).trim().toLowerCase();
+    if (/^\d+$/.test(s)) return parseInt(s, 10);
+    var m = s.match(/^v(\d+)$/);            // "V0" -> pin 0 (pins match indices here)
+    if (m) return parseInt(m[1], 10);
+    s = s.normalize ? s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '') : s;
+    if (s in NAMES) return NAMES[s];
+    return -1;
+  }
+
+  function indexOfItem(item, fallback) {
+    if (item && typeof item === 'object') {
+      var keys = ['index', 'idx', 'dataStreamIndex', 'datastreamIndex', 'pin', 'virtualPin', 'name', 'label', 'id'];
+      for (var i = 0; i < keys.length; i++) {
+        if (keys[i] in item) {
+          var r = indexOfKey(item[keys[i]]);
+          if (r >= 0 && r < 4) return r;
+        }
+        if (item.dataStream && keys[i] in item.dataStream) {
+          var r2 = indexOfKey(item.dataStream[keys[i]]);
+          if (r2 >= 0 && r2 < 4) return r2;
+        }
+      }
+    }
+    return fallback;
+  }
+
+  // Returns {index: value}
+  function extract(raw) {
+    var out = {};
+    if (raw == null) return out;
+    if (Array.isArray(raw)) {
+      raw.forEach(function (item, i) {
+        var idx = indexOfItem(item, i);
+        if (idx >= 0 && idx < 4) out[idx] = pick(item);
+      });
+      return out;
+    }
+    if (typeof raw === 'object') {
+      if (Array.isArray(raw.values)) return extract(raw.values);
+      if (Array.isArray(raw.data)) return extract(raw.data);
+      var single = indexOfItem(raw, -1);
+      if (single >= 0) { out[single] = pick(raw); return out; }
+      Object.keys(raw).forEach(function (k) {
+        var idx = indexOfKey(k);
+        if (idx >= 0 && idx < 4) out[idx] = pick(raw[k]);
+      });
+    }
+    return out;
+  }
+
+  function merge(raw, label) {
+    log(label, raw);
+    var vals = extract(raw);
+    var changed = false;
+    Object.keys(vals).forEach(function (k) {
+      if (vals[k] !== null && vals[k] !== undefined) { state[k] = vals[k]; changed = true; }
+    });
+    if (changed) { gotData = true; render(); }
+  }
+
+  // ---------- rendering ----------
+  function isFall(statusText, fallVal) {
+    var s = String(statusText == null ? '' : statusText).toUpperCase();
+    return Number(fallVal) === 1 || s.indexOf('FALL') >= 0 || s.indexOf('TÉ') >= 0 || s.indexOf('TE NGA') >= 0;
+  }
+
+  function render() {
+    var acc = parseFloat(state[IDX.ACC]);
+    var status = state[IDX.STATUS];
+    var alert = isFall(status, state[IDX.FALL]);
+
+    document.getElementById('status').classList.toggle('alert', alert);
+    document.getElementById('statusIco').innerHTML = alert ? ICON_ALERT : ICON_OK;
+    document.getElementById('statusVal').textContent = alert ? 'FALL DETECTED' : (status != null && status !== '' ? String(status) : 'IDLE');
+    document.getElementById('statusSub').textContent = alert
+      ? 'At ' + new Date().toLocaleTimeString('en-US')
+      : 'Safe · no fall detected';
+
+    if (!isNaN(acc)) {
+      var frac = Math.max(0, Math.min(1, acc / MAX_G));
+      var arc = document.getElementById('arc');
+      arc.setAttribute('stroke-dasharray', (frac * ARC_LEN).toFixed(1) + ' ' + ARC_LEN);
+      arc.setAttribute('stroke', alert ? '#FB923C' : '#34D399');
+      document.getElementById('accTxt').textContent = acc.toFixed(2);
+      pushPoint(acc);
+    }
+
+    document.getElementById('led').classList.toggle('on', alert);
+    document.getElementById('ledTxt').textContent = alert ? 'Alarm active' : 'None';
+    document.getElementById('reset').classList.toggle('hot', alert);
+  }
+
+  function pushPoint(v) {
+    points.push(v);
+    if (points.length > MAX_POINTS) points.shift();
+    var lo = Math.min.apply(null, points), hi = Math.max.apply(null, points);
+    if (hi - lo < 0.1) { lo -= 0.05; hi = lo + 0.1; }
+    var W = 300, H = 110, pad = 6, n = points.length;
+    var d = points.map(function (p, i) {
+      var x = n === 1 ? W : (i / (n - 1)) * W;
+      var y = H - pad - ((p - lo) / (hi - lo)) * (H - pad * 2);
+      return (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+    }).join(' ');
+    document.getElementById('line').setAttribute('d', d);
+    document.getElementById('area').setAttribute('d', d + ' L' + W + ' ' + H + ' L0 ' + H + ' Z');
+    document.getElementById('peak').textContent = 'Peak: ' + Math.max.apply(null, points).toFixed(2) + ' g';
+  }
+
+  // ---------- Blynk calls ----------
+  function call(fn, args) {
+    try { return Promise.resolve(fn.apply(bridge, args || [])); }
+    catch (e) { return Promise.reject(e); }
+  }
+
+  function loadAll() {
+    if (typeof bridge.getValues === 'function') {
+      call(bridge.getValues).then(function (r) { merge(r, 'getValues'); })
+        .catch(function (e) { log('getValues ERROR', String(e && e.message || e)); });
+    }
+    if (typeof bridge.getValue === 'function') {
+      [0, 1, 2, 3].forEach(function (i) {
+        call(bridge.getValue, [i]).then(function (r) {
+          var o = {}; o[i] = r;
+          // keep raw for debug, but map by requested index
+          log('getValue(' + i + ')', r);
+          var v = pick(r);
+          if (v !== null && v !== undefined) { state[i] = v; gotData = true; render(); }
+        }).catch(function (e) { log('getValue(' + i + ') ERROR', String(e && e.message || e)); });
+      });
+    }
+  }
+
+  function onUpdate() {
+    var args = Array.prototype.slice.call(arguments);
+    if (args.length >= 2 && (typeof args[0] === 'number' || typeof args[0] === 'string') && indexOfKey(args[0]) >= 0) {
+      // onValueUpdated(index, value)
+      var o = {}; o[indexOfKey(args[0])] = args[1];
+      merge(o, 'update(i,v)');
+    } else {
+      merge(args[0], 'update');
+    }
+  }
+
+  document.getElementById('reset').addEventListener('click', function () {
+    if (!bridge) return;
+    call(bridge.sendValue, [IDX.RESET, 1])
+      .then(function () { log('sendValue', 'Reset=1'); return new Promise(function (r) { setTimeout(r, 300); }); })
+      .then(function () { return call(bridge.sendValue, [IDX.RESET, 0]); })
+      .catch(function (e) {
+        log('sendValue ERROR', String(e && e.message || e));
+        if (bridge.sendError) try { bridge.sendError('Could not send Reset command'); } catch (x) {}
+      });
+  });
+
+  // List methods including prototype (class) methods
+  function listMethods(o) {
+    var names = [], seen = {};
+    var p = o;
+    while (p && p !== Object.prototype && p !== Function.prototype) {
+      Object.getOwnPropertyNames(p).forEach(function (n) {
+        if (n === 'constructor' || seen[n]) return;
+        seen[n] = 1;
+        try { if (typeof o[n] === 'function') names.push(n); } catch (e) {}
+      });
+      p = Object.getPrototypeOf(p);
+    }
+    return names;
+  }
+
+  function hasApi(o) {
+    return o && (typeof o.getValue === 'function' || typeof o.getValues === 'function' ||
+                 typeof o.setCallbacks === 'function' || typeof o.sendValue === 'function');
+  }
+
+  // BlynkBridge may be an object, a class, or a factory -> find the real instance
+  function resolveBridge(B) {
+    log('typeof BlynkBridge', typeof B);
+    log('BlynkBridge own keys', Object.getOwnPropertyNames(B).join(', '));
+    log('BlynkBridge methods', listMethods(B).join(', ') || '(none)');
+    if (B && B.prototype) log('prototype methods', listMethods(B.prototype).join(', ') || '(none)');
+
+    var tries = [
+      ['as-is', function () { return B; }],
+      ['.default', function () { return B.default; }],
+      ['.instance', function () { return B.instance; }],
+      ['.getInstance()', function () { return B.getInstance(); }],
+      ['.init()', function () { return B.init(); }],
+      ['.create()', function () { return B.create(); }],
+      ['new BlynkBridge()', function () { return new B(); }],
+      ['BlynkBridge()', function () { return B(); }]
+    ];
+    var chain = Promise.resolve(null);
+    tries.forEach(function (t) {
+      chain = chain.then(function (found) {
+        if (found) return found;
+        var r;
+        try { r = t[1](); } catch (e) { return null; }
+        return Promise.resolve(r).then(function (inst) {
+          if (hasApi(inst)) { log('Bridge via', t[0] + ' -> ' + listMethods(inst).join(', ')); return inst; }
+          return null;
+        }, function () { return null; });
+      });
+    });
+    return chain;
+  }
+
+  function start(B) {
+    resolveBridge(B).then(function (inst) {
+      if (!inst) {
+        log('ERROR', 'Could not find getValue/getValues/setCallbacks on BlynkBridge');
+        document.getElementById('statusSub').textContent = 'Bridge API not found – see Debug';
+        document.getElementById('debugBox').open = true;
+        return;
+      }
+      startWith(inst);
+    });
+  }
+
+  function startWith(b) {
+    bridge = b;
+    try {
+      bridge.setCallbacks({
+        onValueUpdated: onUpdate,
+        onValuesUpdated: onUpdate,
+        onThemeUpdated: function () {}
+      });
+    } catch (e) { log('setCallbacks ERROR', String(e && e.message || e)); }
+    loadAll();
+    setTimeout(function () {
+      if (!gotData) {
+        document.getElementById('statusSub').textContent = 'No data yet – open Debug below';
+        document.getElementById('debugBox').open = true;
+      }
+    }, 5000);
+  }
+
+  // Wait up to 10 s for BlynkBridge to appear
+  var tries = 0;
+  (function waitBridge() {
+    var b = window.BlynkBridge || (window.parent && window.parent !== window && (function(){ try { return window.parent.BlynkBridge; } catch(e){ return null; } })());
+    if (b) return start(b);
+    if (++tries > 50) {
+      document.getElementById('statusSub').textContent = 'BlynkBridge not found';
+      document.getElementById('debugBox').open = true;
+      log('ERROR', 'window.BlynkBridge is undefined');
+      return;
+    }
+    setTimeout(waitBridge, 200);
+  })();
+})();
+</script>
